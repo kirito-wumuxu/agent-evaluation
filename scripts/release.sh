@@ -126,6 +126,10 @@ else
     exit 1
   fi
   cd "${ROOT_DIR}/web"
+  if [ ! -d "node_modules" ]; then
+    echo "  未检测到 node_modules，正在执行 pnpm install..."
+    pnpm install
+  fi
   pnpm build
   cd "${ROOT_DIR}"
 fi

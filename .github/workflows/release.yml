@@ -32,14 +32,21 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'pnpm'
           cache-dependency-path: 'web/pnpm-lock.yaml'
+
+      - name: Install Frontend Dependencies & Build
+        run: |
+          cd web
+          pnpm install --frozen-lockfile
+          pnpm build
+          cd ..
 
       - name: Build Multi-Platform Artifacts
         run: |
           chmod +x ./scripts/release.sh
-          ./scripts/release.sh "${{ github.ref_name }}"
+          ./scripts/release.sh "${{ github.ref_name }}" --skip-frontend
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
