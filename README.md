@@ -78,6 +78,22 @@ go build -ldflags="-s -w" -o agent-eval-server cmd/server/main.go
 
 启动后可在浏览器中访问：`http://localhost:8080`。首次启动将在控制台输出预置管理员账号与密码。
 
+### 3. 多平台发布打包与 Git Release
+
+项目提供了开箱即用的跨平台发布脚本 [scripts/release.sh](scripts/release.sh)，支持编译并打包 Linux (amd64/arm64)、macOS (amd64/arm64) 与 Windows (amd64) 平台的生产归档包及 SHA-256 校验清单：
+
+```bash
+# 1. 一键全平台编译打包并生成 dist/*.tar.gz / dist/*.zip 及 checksums.txt
+./scripts/release.sh v1.0.0
+
+# 2. 自动打 Git Tag 并推送到远端仓库
+./scripts/release.sh v1.0.0 --git-tag
+
+# 3. 仅编译指定目标平台 (跳过前端重复构建)
+./scripts/release.sh v1.0.0 --skip-frontend --platforms "linux/amd64,darwin/arm64"
+```
+
+
 ---
 
 ## 目录结构

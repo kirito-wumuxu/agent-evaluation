@@ -11,12 +11,28 @@ import (
 	"agent-evaluation/web"
 )
 
+var (
+	// Version 运行时版本号，通过构建脚本 -ldflags "-X main.Version=..." 注入
+	Version = "dev"
+	// GitCommit Git 提交哈希
+	GitCommit = "none"
+	// BuildTime 编译构建时间戳
+	BuildTime = "unknown"
+)
+
 func main() {
 	port := flag.Int("port", 8080, "HTTP 服务监听端口")
 	dbPath := flag.String("db", "data/eval.db", "SQLite 数据库文件路径")
+	showVersion := flag.Bool("version", false, "显示版本信息并退出")
+	showVersionShort := flag.Bool("v", false, "显示版本信息并退出 (简写)")
 	flag.Parse()
 
-	log.Printf("[Main] 正在启动 Agent 评测系统服务...")
+	if *showVersion || *showVersionShort {
+		fmt.Printf("agent-eval-server %s (commit: %s, built at: %s)\n", Version, GitCommit, BuildTime)
+		return
+	}
+
+	log.Printf("[Main] 正在启动 Agent 评测系统服务 (版本: %s, 提交: %s)...", Version, GitCommit)
 
 	// 1. 初始化 SQLite 数据库与种子数据
 	database, err := db.InitDB(*dbPath)

@@ -28,8 +28,9 @@ go.work.sum
 # env file
 .env
 
-# Application binary
+# Application binary & release artifacts
 agent-eval-server
+/dist/
 
 # Node
 node_modules/

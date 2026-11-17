@@ -54,3 +54,19 @@ go build -ldflags="-s -w" -o agent-eval-server cmd/server/main.go
 # 3. 运行服务
 ./agent-eval-server
 ```
+
+### 多平台发布打包 (Cross-Platform Release)
+```bash
+# 跨平台编译打包与生成发布产物 (dist/*.tar.gz / dist/*.zip + checksums.txt)
+./scripts/release.sh v1.0.0
+
+# 跳过前端重新构建，快速打包
+./scripts/release.sh v1.0.0 --skip-frontend
+
+# 仅编译特定平台
+./scripts/release.sh v1.0.0 --platforms "linux/amd64,darwin/arm64"
+
+# 打包并自动创建 Git 标签推送到远端仓库
+./scripts/release.sh v1.0.0 --git-tag
+```
+
