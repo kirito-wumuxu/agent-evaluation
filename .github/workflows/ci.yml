@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  test:
+    name: Test & Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+          cache: true
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+          cache-dependency-path: 'web/pnpm-lock.yaml'
+
+      - name: Run Backend Unit Tests
+        run: |
+          go test -v ./...
+
+      - name: Install Frontend Dependencies & Build
+        run: |
+          cd web
+          pnpm install --frozen-lockfile
+          pnpm build
+          cd ..
+
+      - name: Verify Single Binary Build
+        run: |
+          CGO_ENABLED=0 go build -ldflags="-s -w" -o agent-eval-server cmd/server/main.go
+          ./agent-eval-server -v
