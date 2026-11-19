@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { apiClient } from '../api/client';
 import { RunRecord } from '../types';
-import { RefreshCw, Trash2, ArrowRight, Activity, Clock } from 'lucide-react';
+import { RefreshCw, RotateCw, Trash2, ArrowRight, Activity, Clock } from 'lucide-react';
 import { RunDetailPage } from './RunDetail';
 
 interface RunsPageProps {
@@ -12,6 +12,7 @@ export const RunsPage: React.FC<RunsPageProps> = ({ initialSelectedRunId }) => {
   const [runs, setRuns] = useState<RunRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedRunId, setSelectedRunId] = useState<number | null>(initialSelectedRunId || null);
+  const [reevaluatingRunId, setReevaluatingRunId] = useState<number | null>(null);
 
   const loadData = async () => {
     setLoading(true);
@@ -22,6 +23,21 @@ export const RunsPage: React.FC<RunsPageProps> = ({ initialSelectedRunId }) => {
       alert('加载运行记录失败: ' + e.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleReevaluateBatch = async (e: React.MouseEvent, id: number) => {
+    e.stopPropagation();
+    if (!confirm(`确定要从用例集同步最新数据并对批次 #${id} 全量重新评测打分吗？`)) return;
+    setReevaluatingRunId(id);
+    try {
+      const res = await apiClient.reevaluateRun(id);
+      alert(`批次 #${id} 全量重新评测完成！共重新评估 ${res.updated_count} 条用例。`);
+      loadData();
+    } catch (err: any) {
+      alert('重新评测失败: ' + (err.response?.data?.message || err.message));
+    } finally {
+      setReevaluatingRunId(null);
     }
   };
 
@@ -163,6 +179,15 @@ export const RunsPage: React.FC<RunsPageProps> = ({ initialSelectedRunId }) => {
                     </td>
                     <td className="py-3.5 px-4 text-right whitespace-nowrap">
                       <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          onClick={(e) => handleReevaluateBatch(e, r.id)}
+                          disabled={reevaluatingRunId === r.id || r.status === 'RUNNING'}
+                          className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded transition-colors disabled:opacity-50"
+                          title="从用例集同步最新期望并全量重新评测"
+                        >
+                          <RotateCw className={`w-3 h-3 ${reevaluatingRunId === r.id ? 'animate-spin' : ''}`} />
+                          {reevaluatingRunId === r.id ? '评测中...' : '重新评测'}
+                        </button>
                         <button
                           onClick={() => setSelectedRunId(r.id)}
                           className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded"

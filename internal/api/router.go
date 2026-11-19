@@ -12,7 +12,7 @@ import (
 )
 
 // SetupRouter 初始化 Gin 路由与静态内嵌托管
-func SetupRouter(db *gorm.DB, runner *engine.TaskRunner, staticFS fs.FS) *gin.Engine {
+func SetupRouter(db *gorm.DB, runner *engine.TaskRunner, staticFS fs.FS, version, commit, buildTime string) *gin.Engine {
 	r := gin.Default()
 
 	// CORS 跨域配置 (支持本地开发 pnpm dev)
@@ -101,11 +101,20 @@ func SetupRouter(db *gorm.DB, runner *engine.TaskRunner, staticFS fs.FS) *gin.En
 		v1.DELETE("/runs/:id", RequireRoles("admin", "developer", "tester"), runHandler.Delete)
 		v1.GET("/runs/:id/items", RequireRoles("admin", "developer", "tester"), runHandler.ListItems)
 		v1.POST("/runs/:id/items/:item_id/review", RequireRoles("admin", "developer", "tester"), runHandler.ReviewItem)
+		v1.POST("/runs/:id/reevaluate", RequireRoles("admin", "developer", "tester"), runHandler.Reevaluate)
+		v1.POST("/runs/:id/items/:item_id/reevaluate", RequireRoles("admin", "developer", "tester"), runHandler.ReevaluateItem)
 
 		// 系统全局配置 (严格仅限 admin 管理员)
 		sysHandler := NewSystemConfigHandler(db)
 		v1.GET("/system-configs", RequireRoles("admin"), sysHandler.List)
 		v1.PUT("/system-configs", RequireRoles("admin"), sysHandler.BatchUpdate)
+
+		// 软件自更新与版本信息 (admin, developer, tester 可查版本与更新，admin 可执行更新与重启)
+		updateHandler := NewSystemUpdateHandler(db, version, commit, buildTime, nil)
+		v1.GET("/system/version", RequireRoles("admin", "developer", "tester"), updateHandler.GetVersion)
+		v1.POST("/system/check-update", RequireRoles("admin", "developer", "tester"), updateHandler.CheckUpdate)
+		v1.POST("/system/apply-update", RequireRoles("admin"), updateHandler.ApplyUpdate)
+		v1.POST("/system/restart", RequireRoles("admin"), updateHandler.RestartServer)
 
 		// 编码 Agent 专属开放接口 (OpenAPI)
 		openAPIHandler := NewOpenAPIHandler(db, runner)

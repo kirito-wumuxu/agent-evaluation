@@ -30,8 +30,9 @@ import { EnvironmentsPage } from './pages/Environments';
 import { EvaluatorsPage } from './pages/Evaluators';
 import { SystemConfigsPage } from './pages/SystemConfigs';
 import { AgentSkillModal } from './components/AgentSkillModal';
+import { VersionUpdateModal } from './components/VersionUpdateModal';
 import { apiClient } from './api/client';
-import { User, AuthConfig } from './types';
+import { User, AuthConfig, SystemVersionInfo } from './types';
 
 type TabType = 'tasks' | 'runs' | 'scenarios' | 'datasets' | 'environments' | 'evaluators' | 'settings';
 
@@ -45,6 +46,8 @@ export const App: React.FC = () => {
   const [showLoginModal, setShowLoginModal] = useState<boolean>(false);
   const [loginLoading, setLoginLoading] = useState<boolean>(false);
   const [showSkillModal, setShowSkillModal] = useState<boolean>(false);
+  const [versionInfo, setVersionInfo] = useState<SystemVersionInfo | null>(null);
+  const [showUpdateModal, setShowUpdateModal] = useState<boolean>(false);
   
   // 登录表单状态
   const [loginMethod, setLoginMethod] = useState<'password' | 'feishu'>('password');
@@ -78,6 +81,15 @@ export const App: React.FC = () => {
     }
   };
 
+  const loadVersion = async () => {
+    try {
+      const info = await apiClient.getSystemVersion();
+      setVersionInfo(info);
+    } catch (e) {
+      console.warn('加载系统版本信息失败:', e);
+    }
+  };
+
   useEffect(() => {
     // 拦截飞书回调携带的 token 参数
     const params = new URLSearchParams(window.location.search);
@@ -88,6 +100,7 @@ export const App: React.FC = () => {
     }
 
     loadAuth();
+    loadVersion();
 
     const handleExpired = () => {
       setCurrentUser(null);
@@ -270,6 +283,26 @@ export const App: React.FC = () => {
             >
               <Bot className="w-3.5 h-3.5 text-indigo-600 group-hover:scale-110 transition-transform" />
               <span>Agent Skill 接入</span>
+            </button>
+
+            {/* 版本指示器与自更新入口 */}
+            <button
+              type="button"
+              onClick={() => setShowUpdateModal(true)}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border font-mono font-medium transition-all cursor-pointer ${
+                versionInfo?.has_update
+                  ? 'bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100 shadow-2xs'
+                  : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'
+              }`}
+              title={versionInfo?.has_update ? `发现新版本 ${versionInfo.latest_version}，点击升级` : '查看系统版本与更新'}
+            >
+              <Sparkles className={`w-3.5 h-3.5 ${versionInfo?.has_update ? 'text-amber-500 animate-bounce' : 'text-gray-400'}`} />
+              <span>{versionInfo?.current_version || 'dev'}</span>
+              {versionInfo?.has_update && (
+                <span className="flex items-center text-[10px] bg-amber-500 text-white font-sans px-1.5 py-0.2 rounded-full font-bold">
+                  新版
+                </span>
+              )}
             </button>
 
             {/* 引擎状态 */}
@@ -593,6 +626,15 @@ export const App: React.FC = () => {
 
       {/* 编码 Agent Skill 接入指引与离线包下载弹窗 */}
       <AgentSkillModal isOpen={showSkillModal} onClose={() => setShowSkillModal(false)} />
+
+      {/* 软件自更新与版本信息弹窗 */}
+      <VersionUpdateModal
+        isOpen={showUpdateModal}
+        onClose={() => setShowUpdateModal(false)}
+        versionInfo={versionInfo}
+        onVersionUpdated={(info) => setVersionInfo(info)}
+        currentUser={currentUser}
+      />
     </div>
   );
 };

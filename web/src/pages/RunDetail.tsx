@@ -4,6 +4,7 @@ import { RunRecord, RunRecordItem, EvaluatorDetail } from '../types';
 import {
   ArrowLeft,
   RefreshCw,
+  RotateCw,
   CheckCircle2,
   XCircle,
   AlertTriangle,
@@ -38,6 +39,42 @@ export const RunDetailPage: React.FC<RunDetailProps> = ({ runId, onBack }) => {
   const [reviewerName, setReviewerName] = useState<string>('质检员');
   const [savingReview, setSavingReview] = useState(false);
   const [compareMode, setCompareMode] = useState<'table' | 'raw'>('table');
+
+  // 重新评测状态
+  const [reevaluatingAll, setReevaluatingAll] = useState(false);
+  const [reevaluatingItemId, setReevaluatingItemId] = useState<number | null>(null);
+
+  const handleReevaluateAll = async () => {
+    if (!confirm('确定要从用例集同步最新用例数据（输入/期望输出），并对该批次所有用例重新执行评测器打分吗？')) {
+      return;
+    }
+    setReevaluatingAll(true);
+    try {
+      const res = await apiClient.reevaluateRun(runId);
+      alert(`全量重新评测完成！共重新评估 ${res.updated_count} 条用例。`);
+      await loadData();
+    } catch (e: any) {
+      alert('全量重新评测失败: ' + (e.response?.data?.message || e.message));
+    } finally {
+      setReevaluatingAll(false);
+    }
+  };
+
+  const handleReevaluateItem = async (item: RunRecordItem, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setReevaluatingItemId(item.id);
+    try {
+      const res = await apiClient.reevaluateRunItem(runId, item.id);
+      if (detailItem && detailItem.id === item.id) {
+        setDetailItem(res.item);
+      }
+      await loadData();
+    } catch (e: any) {
+      alert('用例重新评测失败: ' + (e.response?.data?.message || e.message));
+    } finally {
+      setReevaluatingItemId(null);
+    }
+  };
 
   const formatJsonStr = (raw: string) => {
     if (!raw) return '';
@@ -323,12 +360,24 @@ export const RunDetailPage: React.FC<RunDetailProps> = ({ runId, onBack }) => {
         >
           <ArrowLeft className="w-4 h-4" /> 返回运行记录列表
         </button>
-        <button
-          onClick={loadData}
-          className="flex items-center gap-1.5 px-3.5 py-1.5 text-sm bg-white border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-700 shadow-sm"
-        >
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> 刷新明细
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleReevaluateAll}
+            disabled={reevaluatingAll || loading || run.status === 'RUNNING'}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 text-sm bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-sm font-medium transition-colors disabled:opacity-50"
+            title="从用例集同步最新数据并对本批次全量用例重新评测打分"
+          >
+            <RotateCw className={`w-4 h-4 ${reevaluatingAll ? 'animate-spin' : ''}`} />
+            {reevaluatingAll ? '正在重新评测...' : '更新用例重新评测 (全量)'}
+          </button>
+          <button
+            onClick={loadData}
+            disabled={loading}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 text-sm bg-white border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-700 shadow-sm font-medium"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> 刷新明细
+          </button>
+        </div>
       </div>
 
       {/* 任务指标概览卡片 */}
@@ -521,6 +570,15 @@ export const RunDetailPage: React.FC<RunDetailProps> = ({ runId, onBack }) => {
                   </td>
                   <td className="py-3 px-4 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center justify-end gap-1.5">
+                      <button
+                        onClick={(e) => handleReevaluateItem(item, e)}
+                        disabled={reevaluatingItemId === item.id}
+                        className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded transition-colors disabled:opacity-50"
+                        title="从用例集同步最新期望并重新评测该用例"
+                      >
+                        <RotateCw className={`w-3 h-3 ${reevaluatingItemId === item.id ? 'animate-spin' : ''}`} />
+                        {reevaluatingItemId === item.id ? '评测中...' : '重新评测'}
+                      </button>
                       <button
                         onClick={() => setDetailItem(item)}
                         className="px-2.5 py-1 text-xs font-semibold text-blue-600 hover:bg-blue-50 rounded transition-colors"
@@ -896,6 +954,16 @@ export const RunDetailPage: React.FC<RunDetailProps> = ({ runId, onBack }) => {
                 )}
               </div>
               <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleReevaluateItem(detailItem)}
+                  disabled={reevaluatingItemId === detailItem.id}
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-sm transition-colors disabled:opacity-50"
+                  title="从用例集同步最新期望并重新评测该用例"
+                >
+                  <RotateCw className={`w-3.5 h-3.5 ${reevaluatingItemId === detailItem.id ? 'animate-spin' : ''}`} />
+                  {reevaluatingItemId === detailItem.id ? '正在重新评测...' : '更新用例重新评测'}
+                </button>
                 <button
                   type="button"
                   onClick={() => openReviewModal(detailItem)}

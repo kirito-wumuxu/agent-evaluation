@@ -1,9 +1,14 @@
 package api
 
 import (
+	"context"
+	"encoding/json"
+	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
+	"agent-evaluation/internal/evaluator"
 	"agent-evaluation/internal/model"
 
 	"github.com/gin-gonic/gin"
@@ -173,5 +178,187 @@ func (h *RunHandler) recalcHumanStats(runRecordID uint) {
 		"reviewed_count":   reviewedCount,
 		"human_pass_count": humanPassCount,
 		"human_avg_score":  humanAvgScore,
+	})
+}
+
+// loadTaskEvaluators 加载任务所配置的所有评测模块实例
+func (h *RunHandler) loadTaskEvaluators(task *model.EvaluationTask) []evaluator.Evaluator {
+	if task == nil {
+		return nil
+	}
+
+	var sysConfigs []model.SystemConfig
+	h.db.Find(&sysConfigs)
+	globalConfigMap := make(map[string]string)
+	for _, sc := range sysConfigs {
+		globalConfigMap[sc.Key] = sc.Value
+	}
+
+	var evalConfigs []model.TaskEvaluatorConfig
+	if task.EvaluatorConfigsJSON != "" {
+		_ = json.Unmarshal([]byte(task.EvaluatorConfigsJSON), &evalConfigs)
+	}
+
+	var evaluatorsList []evaluator.Evaluator
+	for _, cfg := range evalConfigs {
+		var evalModel model.Evaluator
+		if err := h.db.First(&evalModel, cfg.EvaluatorID).Error; err == nil {
+			ev, err := evaluator.NewEvaluatorFromModel(&evalModel, cfg.Weight, globalConfigMap)
+			if err == nil {
+				evaluatorsList = append(evaluatorsList, ev)
+			}
+		}
+	}
+	return evaluatorsList
+}
+
+// reevaluateSingleItem 同步指定用例最新数据并复用实际输出重新执行评测器
+func (h *RunHandler) reevaluateSingleItem(item *model.RunRecordItem, evaluatorsList []evaluator.Evaluator) {
+	// 1. 同步最新用例数据（输入、期望输出）
+	var tc model.TestCase
+	if err := h.db.First(&tc, item.TestCaseID).Error; err == nil {
+		item.InputData = tc.InputData
+		item.ExpectedOutput = tc.ExpectedOutput
+	}
+
+	// 2. 若执行状态为正常完成，重新调用评测模块打分
+	if item.Status == model.RunItemStatusCompleted {
+		var evalResults []*evaluator.EvalResult
+		evalCtx, evalCancel := context.WithTimeout(context.Background(), 45*time.Second)
+		for _, ev := range evaluatorsList {
+			res, err := ev.Evaluate(evalCtx, item.InputData, item.ActualOutput, item.ExpectedOutput)
+			if err != nil {
+				evalResults = append(evalResults, &evaluator.EvalResult{
+					Reason: fmt.Sprintf("评测模块执行异常: %v", err),
+				})
+			} else {
+				evalResults = append(evalResults, res)
+			}
+		}
+		evalCancel()
+
+		score, passed := evaluator.Aggregate(evalResults)
+		item.MachineScore = score
+		item.MachinePassed = passed
+
+		detailsBytes, _ := json.Marshal(evalResults)
+		item.MachineDetailsJSON = string(detailsBytes)
+	}
+
+	h.db.Save(item)
+}
+
+// recalcMachineStats 重新汇总计算并更新 run_records 的机器评测指标
+func (h *RunHandler) recalcMachineStats(runRecordID uint) {
+	var items []model.RunRecordItem
+	h.db.Where("run_record_id = ?", runRecordID).Find(&items)
+
+	totalCount := len(items)
+	successCount := 0
+	errorCount := 0
+	machinePassCount := 0
+	totalScoreSum := 0.0
+
+	for _, it := range items {
+		if it.Status == model.RunItemStatusCompleted {
+			successCount++
+			if it.MachinePassed {
+				machinePassCount++
+			}
+			totalScoreSum += it.MachineScore
+		} else {
+			errorCount++
+		}
+	}
+
+	machineAvgScore := 0.0
+	if successCount > 0 {
+		machineAvgScore = totalScoreSum / float64(successCount)
+	}
+
+	h.db.Model(&model.RunRecord{}).Where("id = ?", runRecordID).Updates(map[string]interface{}{
+		"total_count":        totalCount,
+		"success_count":      successCount,
+		"error_count":        errorCount,
+		"machine_pass_count": machinePassCount,
+		"machine_avg_score":  machineAvgScore,
+	})
+}
+
+// ReevaluateItem 单个用例更新并重新评测
+func (h *RunHandler) ReevaluateItem(c *gin.Context) {
+	runID := c.Param("id")
+	itemID := c.Param("item_id")
+
+	var run model.RunRecord
+	if err := h.db.Preload("Task").First(&run, runID).Error; err != nil {
+		Error(c, http.StatusNotFound, "运行记录未找到")
+		return
+	}
+
+	var item model.RunRecordItem
+	if err := h.db.Where("id = ? AND run_record_id = ?", itemID, runID).First(&item).Error; err != nil {
+		Error(c, http.StatusNotFound, "用例运行明细未找到")
+		return
+	}
+
+	evaluatorsList := h.loadTaskEvaluators(run.Task)
+	h.reevaluateSingleItem(&item, evaluatorsList)
+
+	h.recalcMachineStats(run.ID)
+
+	var updatedRun model.RunRecord
+	_ = h.db.Preload("Task").First(&updatedRun, run.ID)
+
+	Success(c, gin.H{
+		"item": item,
+		"run":  updatedRun,
+	})
+}
+
+// Reevaluate 全量用例更新并重新评测
+func (h *RunHandler) Reevaluate(c *gin.Context) {
+	id := c.Param("id")
+	var run model.RunRecord
+	if err := h.db.Preload("Task").First(&run, id).Error; err != nil {
+		Error(c, http.StatusNotFound, "运行记录未找到")
+		return
+	}
+
+	evaluatorsList := h.loadTaskEvaluators(run.Task)
+
+	var items []model.RunRecordItem
+	if err := h.db.Where("run_record_id = ?", id).Find(&items).Error; err != nil {
+		Error(c, http.StatusInternalServerError, "获取运行明细失败: "+err.Error())
+		return
+	}
+
+	concurrency := 5
+	if run.Task != nil && run.Task.Concurrency > 0 {
+		concurrency = run.Task.Concurrency
+	}
+
+	sem := make(chan struct{}, concurrency)
+	var wg sync.WaitGroup
+
+	for i := range items {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(idx int) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			h.reevaluateSingleItem(&items[idx], evaluatorsList)
+		}(i)
+	}
+	wg.Wait()
+
+	h.recalcMachineStats(run.ID)
+
+	var updatedRun model.RunRecord
+	_ = h.db.Preload("Task").First(&updatedRun, id)
+
+	Success(c, gin.H{
+		"updated_count": len(items),
+		"run":           updatedRun,
 	})
 }

@@ -12,6 +12,7 @@ import {
   SystemConfig,
   User,
   AuthConfig,
+  SystemVersionInfo,
 } from '../types';
 
 const api = axios.create({
@@ -130,6 +131,10 @@ export const apiClient = {
       reviewer_name?: string;
     }
   ): Promise<RunRecordItem> => api.post(`/runs/${runId}/items/${itemId}/review`, data),
+  reevaluateRun: (runId: number): Promise<{ updated_count: number; run: RunRecord }> =>
+    api.post(`/runs/${runId}/reevaluate`),
+  reevaluateRunItem: (runId: number, itemId: number): Promise<{ item: RunRecordItem; run: RunRecord }> =>
+    api.post(`/runs/${runId}/items/${itemId}/reevaluate`),
 
   // System Configs
   getSystemConfigs: (): Promise<SystemConfig[]> => api.get('/system-configs'),
@@ -152,4 +157,11 @@ export const apiClient = {
 
   // OpenAPI & Skill
   getOpenAPIConfig: (): Promise<{ base_url: string; api_key: string }> => api.get('/openapi/config'),
+
+  // System Version & Self-Update
+  getSystemVersion: (): Promise<SystemVersionInfo> => api.get('/system/version'),
+  checkSystemUpdate: (): Promise<SystemVersionInfo> => api.post('/system/check-update'),
+  applySystemUpdate: (data?: { asset_url?: string; checksum_sha256?: string }): Promise<{ message: string }> =>
+    api.post('/system/apply-update', data || {}),
+  restartSystem: (): Promise<{ message: string }> => api.post('/system/restart'),
 };

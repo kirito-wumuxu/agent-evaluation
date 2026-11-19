@@ -188,3 +188,18 @@ export interface AuthConfig {
   redirect_uri?: string;
 }
 
+export interface SystemVersionInfo {
+  current_version: string;
+  git_commit: string;
+  build_time: string;
+  latest_version?: string;
+  has_update: boolean;
+  release_notes?: string;
+  published_at?: string;
+  asset_url?: string;
+  asset_name?: string;
+  asset_size?: number;
+  checksum_url?: string;
+  check_error?: string;
+}
+
